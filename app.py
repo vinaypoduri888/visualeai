@@ -1,16 +1,15 @@
-# Install necessary packages
-
-
-# Import necessary libraries
 import streamlit as st
 from PIL import Image
 from transformers import BlipProcessor, BlipForQuestionAnswering
-import numpy as np
-import cv2
 
 # Load the BLIP model and processor
-processor = BlipProcessor.from_pretrained("Salesforce/blip-vqa-base")
-model = BlipForQuestionAnswering.from_pretrained("Salesforce/blip-vqa-base")
+@st.cache_resource
+def load_model():
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-vqa-base")
+    model = BlipForQuestionAnswering.from_pretrained("Salesforce/blip-vqa-base")
+    return processor, model
+
+processor, model = load_model()
 
 # Define the Streamlit application
 def main():
@@ -31,7 +30,6 @@ def main():
     3. View the generated answer below the input.
     """)
     st.sidebar.write("### Developed by Vinay")
-
 
     # Capture or upload an image
     image_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
