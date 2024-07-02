@@ -1,7 +1,10 @@
 streamlit
+streamlit-webrtc
 opencv-python-headless
 transformers
+requests
 pillow
 torch
 torchvision
 torchaudio
+gtts
