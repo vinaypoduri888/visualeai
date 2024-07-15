@@ -6,51 +6,38 @@ import cv2
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 from gtts import gTTS
 import logging
+import torch
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize the VQA model and processor
-try:
-    vqa_model_name = "dandelin/vilt-b32-finetuned-vqa"
-    vqa_processor = ViltProcessor.from_pretrained(vqa_model_name)
-    vqa_model = ViltForQuestionAnswering.from_pretrained(vqa_model_name)
-    logger.info("VQA model loaded successfully")
-except Exception as e:
-    logger.error(f"Failed to load VQA model: {e}")
+vqa_model_name = "dandelin/vilt-b32-finetuned-vqa"
+vqa_processor = ViltProcessor.from_pretrained(vqa_model_name)
+vqa_model = ViltForQuestionAnswering.from_pretrained(vqa_model_name)
+logger.info("VQA model loaded successfully")
 
 # Initialize the BLIP model for image captioning
-try:
-    caption_model_name = "Salesforce/blip-image-captioning-base"
-    caption_processor = BlipProcessor.from_pretrained(caption_model_name)
-    caption_model = BlipForConditionalGeneration.from_pretrained(caption_model_name)
-    logger.info("Caption model loaded successfully")
-except Exception as e:
-    logger.error(f"Failed to load Caption model: {e}")
+caption_model_name = "Salesforce/blip-image-captioning-base"
+caption_processor = BlipProcessor.from_pretrained(caption_model_name)
+caption_model = BlipForConditionalGeneration.from_pretrained(caption_model_name)
+logger.info("Caption model loaded successfully")
 
 # Function to process and predict
 def answer_question(image, question):
-    try:
-        inputs = vqa_processor(image, question, return_tensors="pt")
-        outputs = vqa_model(**inputs)
-        logits = outputs.logits
-        idx = logits.argmax(-1).item()
-        logger.info("Question answered successfully")
-        return vqa_model.config.id2label[idx]
-    except Exception as e:
-        logger.error(f"Error in answer_question: {e}")
+    inputs = vqa_processor(image, question, return_tensors="pt")
+    outputs = vqa_model(**inputs)
+    logits = outputs.logits
+    idx = logits.argmax(-1).item()
+    return vqa_model.config.id2label[idx]
 
 # Function to generate image caption
 def generate_caption(image):
-    try:
-        inputs = caption_processor(image, return_tensors="pt")
-        outputs = caption_model.generate(**inputs)
-        caption = caption_processor.decode(outputs[0], skip_special_tokens=True)
-        logger.info("Caption generated successfully")
-        return caption
-    except Exception as e:
-        logger.error(f"Error in generate_caption: {e}")
+    inputs = caption_processor(image, return_tensors="pt")
+    outputs = caption_model.generate(**inputs)
+    caption = caption_processor.decode(outputs[0], skip_special_tokens=True)
+    return caption
 
 # Function to capture image from webcam
 class VideoProcessor(VideoTransformerBase):
@@ -63,7 +50,6 @@ class VideoProcessor(VideoTransformerBase):
 
 # Streamlit app
 st.title("Visual Question Answering and Image Captioning Bot")
-logger.info("Streamlit app started")
 
 # Sidebar for input selection
 st.sidebar.title("Input Options")
@@ -79,43 +65,36 @@ enhance_option = st.sidebar.checkbox("Enhance Image Quality")
 question = st.text_input("Ask a question about the image:")
 
 # Image handling
-try:
-    if input_option == "Upload an Image":
-        uploaded_image = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
-        if uploaded_image:
-            image = Image.open(uploaded_image).convert("RGB")
+if input_option == "Upload an Image":
+    uploaded_image = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
+    if uploaded_image:
+        image = Image.open(uploaded_image).convert("RGB")
+        if enhance_option:
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(2.0)
+        image_placeholder.image(image, caption="Uploaded Image", use_column_width=True)
+
+elif input_option == "Use Webcam":
+    ctx = webrtc_streamer(key="example", video_processor_factory=VideoProcessor)
+    if ctx.video_processor and ctx.video_processor.frame is not None:
+        image = cv2.cvtColor(ctx.video_processor.frame, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image)
+        if enhance_option:
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(2.0)
+        image_placeholder.image(image, caption="Captured Image", use_column_width=True)
+
+elif input_option == "Image URL":
+    image_url = st.text_input("Enter Image URL:")
+    if image_url:
+        try:
+            image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
             if enhance_option:
                 enhancer = ImageEnhance.Sharpness(image)
                 image = enhancer.enhance(2.0)
-            image_placeholder.image(image, caption="Uploaded Image", use_column_width=True)
-            logger.info("Image uploaded successfully")
-
-    elif input_option == "Use Webcam":
-        ctx = webrtc_streamer(key="example", video_processor_factory=VideoProcessor)
-        if ctx.video_processor and ctx.video_processor.frame is not None:
-            image = cv2.cvtColor(ctx.video_processor.frame, cv2.COLOR_BGR2RGB)
-            image = Image.fromarray(image)
-            if enhance_option:
-                enhancer = ImageEnhance.Sharpness(image)
-                image = enhancer.enhance(2.0)
-            image_placeholder.image(image, caption="Captured Image", use_column_width=True)
-            logger.info("Image captured successfully")
-
-    elif input_option == "Image URL":
-        image_url = st.text_input("Enter Image URL:")
-        if image_url:
-            try:
-                image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
-                if enhance_option:
-                    enhancer = ImageEnhance.Sharpness(image)
-                    image = enhancer.enhance(2.0)
-                image_placeholder.image(image, caption="Image from URL", use_column_width=True)
-                logger.info("Image loaded from URL successfully")
-            except Exception as e:
-                st.error("Invalid URL or unable to load image.")
-                logger.error(f"Error loading image from URL: {e}")
-except Exception as e:
-    logger.error(f"Error handling image input: {e}")
+            image_placeholder.image(image, caption="Image from URL", use_column_width=True)
+        except:
+            st.error("Invalid URL or unable to load image.")
 
 # Submit button and processing
 if st.button("Ask"):
@@ -133,10 +112,8 @@ if st.button("Ask"):
                     audio_bytes = audio_file.read()
                     st.audio(audio_bytes, format="audio/mp3")
 
-                    logger.info("Answer generated and audio response created")
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
-                    logger.error(f"Error generating answer: {e}")
         else:
             st.write("Please provide an image.")
     else:
@@ -157,10 +134,8 @@ if st.button("Generate Caption"):
                 audio_bytes = audio_file.read()
                 st.audio(audio_bytes, format="audio/mp3")
 
-                logger.info("Caption generated and audio response created")
             except Exception as e:
                 st.error(f"An error occurred: {e}")
-                logger.error(f"Error generating caption: {e}")
     else:
         st.write("Please provide an image.")
 
@@ -182,3 +157,5 @@ st.sidebar.write("""
 6. View and listen to the generated answer and caption below the input.
 """)
 st.sidebar.write("### Developed by Vinay")
+
+logger.info("Streamlit app started")
